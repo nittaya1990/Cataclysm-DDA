@@ -3,18 +3,7 @@
     "type": "mapgen",
     "method": "json",
     "nested_mapgen_id": "fbmsw_0",
-    "object": {
-      "mapgensize": [ 6, 6 ],
-      "rows": [
-        "      ",
-        "      ",
-        "      ",
-        "      ",
-        "      ",
-        "      "
-      ],
-      "palettes": [ "fbmsw_wood_palette" ]
-    }
+    "object": { "mapgensize": [ 6, 6 ], "palettes": [ "fbmsw_common_palette" ] }
   },
   {
     "type": "mapgen",
@@ -37,14 +26,37 @@
         "  s tr ",
         "       "
       ],
-      "palettes": [ "fbmsw_wad_palette" ]
+      "palettes": [ "fbmsw_common_palette" ]
+    }
+  },
+  {
+    "type": "mapgen",
+    "method": "json",
+    "nested_mapgen_id": "fbmsw_brewery1_still_roof",
+    "object": {
+      "mapgensize": [ 7, 7 ],
+      "rows": [
+        "       ",
+        "       ",
+        "       ",
+        "       ",
+        "       ",
+        "  C    ",
+        "       "
+      ],
+      "palettes": [ "fbmsw_common_palette" ]
     }
   },
   {
     "type": "mapgen",
     "update_mapgen_id": "fbmsw_brewery1_southwest",
     "method": "json",
-    "object": { "place_nested": [ { "chunks": [ "fbmsw_brewery1_still" ], "x": 3, "y": 14 } ] }
+    "object": {
+      "place_nested": [
+        { "chunks": [ "fbmsw_brewery1_still" ], "x": 3, "y": 14, "z": 0 },
+        { "chunks": [ "fbmsw_brewery1_still_roof" ], "x": 3, "y": 14, "z": 1 }
+      ]
+    }
   },
   {
     "type": "mapgen",
@@ -61,7 +73,7 @@
         " H     ",
         "       "
       ],
-      "palettes": [ "fbmsw_wad_palette" ]
+      "palettes": [ "fbmsw_common_palette" ]
     }
   },
   {

@@ -11,7 +11,7 @@
       "G": "t_palisade_gate",
       ";": "t_dirt"
     },
-    "furniture": {  }
+    "furniture": { ";": "f_clear" }
   },
   {
     "type": "mapgen",
@@ -45,6 +45,7 @@
         ";;;;;;;;;;;;;;;;;;;;    ",
         "                        "
       ],
+      "flags": [ "ALLOW_TERRAIN_UNDER_OTHER_DATA" ],
       "palettes": [ "fbmf_2_common_palette" ]
     }
   },
@@ -53,6 +54,19 @@
     "update_mapgen_id": "faction_base_farm_2_0",
     "method": "json",
     "object": { "place_nested": [ { "chunks": [ "fbmf_2" ], "x": 0, "y": 0 } ] }
+  },
+  {
+    "//": "Dummy map to add recipes to preexisting farm extensions as a fallback",
+    "type": "mapgen",
+    "method": "json",
+    "nested_mapgen_id": "fbmf_2_fallback_recipe_1",
+    "object": { "mapgensize": [ 1, 1 ], "rows": [ " " ], "palettes": [ "fbmf_2_common_palette" ] }
+  },
+  {
+    "type": "mapgen",
+    "update_mapgen_id": "fbmf_2_fallback_recipe_1",
+    "method": "json",
+    "object": { "place_nested": [ { "chunks": [ "fbmf_2_fallback_recipe_1" ], "x": 0, "y": 0 } ] }
   },
   {
     "type": "mapgen",

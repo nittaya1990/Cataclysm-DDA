@@ -142,7 +142,7 @@
     "move_cost_mod": -1,
     "coverage": 65,
     "required_str": -1,
-    "flags": [ "NOITEM", "MINEABLE", "BLOCK_WIND", "EMITTER" ],
+    "flags": [ "NOITEM", "MINEABLE", "BLOCK_WIND" ],
     "emissions": [ "emit_smoke_plume", "emit_hot_air_migo_seep" ],
     "bash": {
       "str_min": 65,
@@ -169,7 +169,7 @@
     "type": "furniture",
     "id": "f_moxie_tube",
     "name": "breather",
-    "description": "On the ground here lays several colorless coral reefs, the black veins are noticeably more engorged as they breathe.",
+    "description": "On the ground here lay several colorless coral reefs, the black veins are noticeably more engorged as they breathe.",
     "symbol": "+",
     "color": "light_gray",
     "move_cost_mod": 8,
