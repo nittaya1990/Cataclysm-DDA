@@ -2,17 +2,16 @@
 #ifndef CATA_SRC_ITEM_ACTION_H
 #define CATA_SRC_ITEM_ACTION_H
 
-#include <iosfwd>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "translations.h"
+#include "translation.h"
 
+class Character;
 class JsonObject;
 class item;
 class item_action;
-class Character;
 
 using item_action_id = std::string;
 using item_action_map = std::map< item_action_id, item * >;
@@ -52,7 +51,7 @@ class item_action_generator
         * @return actions mapped to items
         */
         item_action_map map_actions_to_items( Character &you, const std::vector<item *> &pseudos,
-                                              const bool use_player_inventory = true ) const;
+                                              bool use_player_inventory = true ) const;
 
         // Returns (translated) name of action
         std::string get_action_name( const item_action_id &id ) const;

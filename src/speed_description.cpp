@@ -1,8 +1,9 @@
 #include "speed_description.h"
 
+#include <algorithm>
+
+#include "flexbuffer_json.h"
 #include "generic_factory.h"
-#include "json.h"
-#include "make_static.h"
 
 namespace
 {
@@ -32,7 +33,7 @@ void speed_description::reset()
     speed_description_factory.reset();
 }
 
-void speed_description::load( const JsonObject &jo, const std::string & )
+void speed_description::load( const JsonObject &jo, const std::string_view )
 {
     optional( jo, was_loaded, "values", values_ );
     std::sort( values_.begin(), values_.end(),
@@ -50,13 +51,18 @@ void speed_description_value::load( const JsonObject &jo )
 {
     mandatory( jo, was_loaded, "value", value_ );
     if( value_ < 0.00 ) {
-        jo.throw_error( "value outside supported range", "value" );
+        jo.throw_error_at( "value", "value outside supported range" );
     }
-    optional( jo, was_loaded, "descriptions", descriptions_, auto_flags_reader<std::string> {} );
+    if( jo.has_array( "descriptions" ) ) {
+        optional( jo, was_loaded, "descriptions", descriptions_ );
+    } else if( jo.has_string( "descriptions" ) ) {
+        translation description;
+        optional( jo, was_loaded, "descriptions", description );
+        descriptions_.emplace_back( description );
+    }
 }
 
-void speed_description_value::deserialize( JsonIn &jsin )
+void speed_description_value::deserialize( const JsonObject &data )
 {
-    JsonObject data = jsin.get_object();
     load( data );
 }

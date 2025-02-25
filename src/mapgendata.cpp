@@ -1,10 +1,19 @@
 #include "mapgendata.h"
 
+#include <algorithm>
+#include <iterator>
+#include <optional>
+
 #include "all_enum_values.h"
+#include "coordinates.h"
+#include "cube_direction.h"
 #include "debug.h"
+#include "enum_conversions.h"
+#include "flexbuffer_json.h"
+#include "hash_utils.h"
 #include "json.h"
+#include "line.h"
 #include "map.h"
-#include "mapdata.h"
 #include "omdata.h"
 #include "overmapbuffer.h"
 #include "point.h"
@@ -25,6 +34,12 @@ void mapgen_arguments::serialize( JsonOut &jo ) const
 void mapgen_arguments::deserialize( const JsonValue &ji )
 {
     ji.read( map, true );
+}
+
+size_t std::hash<mapgen_arguments>::operator()( const mapgen_arguments &args ) const noexcept
+{
+    cata::range_hash h;
+    return h( args.map );
 }
 
 static const regional_settings dummy_regional_settings;
@@ -50,13 +65,15 @@ mapgendata::mapgendata( const tripoint_abs_omt &over, map &mp, const float densi
     , when_( when )
     , mission_( miss )
     , zlevel_( over.z() )
-    , t_above( overmap_buffer.ter( over + tripoint_above ) )
-    , t_below( overmap_buffer.ter( over + tripoint_below ) )
+    , predecessors_( overmap_buffer.predecessors( over ) )
+    , t_above( overmap_buffer.ter( over + tripoint::above ) )
+    , t_below( overmap_buffer.ter( over + tripoint::below ) )
     , region( overmap_buffer.get_settings( over ) )
     , m( mp )
     , default_groundcover( region.default_groundcover )
 {
-    int rotation = terrain_type_->get_rotation();
+    bool ignore_rotation = terrain_type_->has_flag( oter_flags::ignore_rotation_for_adjacency );
+    int rotation = ignore_rotation ? 0 : terrain_type_->get_rotation();
     auto set_neighbour = [&]( int index, direction dir ) {
         t_nesw[index] =
             overmap_buffer.ter( over + displace( dir ).rotate( rotation ) );
@@ -69,15 +86,21 @@ mapgendata::mapgendata( const tripoint_abs_omt &over, map &mp, const float densi
     set_neighbour( 5, direction::SOUTHEAST );
     set_neighbour( 6, direction::SOUTHWEST );
     set_neighbour( 7, direction::NORTHWEST );
-    if( cata::optional<mapgen_arguments> *maybe_args = overmap_buffer.mapgen_args( over ) ) {
-        if( *maybe_args ) {
+    if( std::optional<mapgen_arguments> *maybe_args = overmap_buffer.mapgen_args( over ) ) {
+        if( *maybe_args && !overmap_buffer.externally_set_args ) {
             mapgen_args_ = **maybe_args;
         } else {
             // We are the first omt from this overmap_special to be generated,
             // so now is the time to generate the arguments
-            if( cata::optional<overmap_special_id> s = overmap_buffer.overmap_special_at( over ) ) {
+            if( std::optional<overmap_special_id> s = overmap_buffer.overmap_special_at( over ) ) {
                 const overmap_special &special = **s;
-                *maybe_args = special.get_args( *this );
+                mapgen_arguments internally_set_args = special.get_args( *this );
+                if( overmap_buffer.externally_set_args ) {
+                    maybe_args->value().map.merge( internally_set_args.map );
+                    overmap_buffer.externally_set_args = false;
+                } else {
+                    *maybe_args = internally_set_args;
+                }
                 mapgen_args_ = **maybe_args;
             } else {
                 debugmsg( "mapgen params expected but no overmap special found for terrain %s",
@@ -95,7 +118,26 @@ mapgendata::mapgendata( const tripoint_abs_omt &over, map &mp, const float densi
 
 mapgendata::mapgendata( const mapgendata &other, const oter_id &other_id ) : mapgendata( other )
 {
+    const int old_rotation = terrain_type_->has_flag(
+                                 oter_flags::ignore_rotation_for_adjacency ) ? 0 : terrain_type_->get_rotation();
+    const int new_rotation = other_id->has_flag( oter_flags::ignore_rotation_for_adjacency ) ? 0 :
+                             other_id->get_rotation();
+
     terrain_type_ = other_id;
+
+    const int rotation_delta = new_rotation - old_rotation;
+
+    if( rotation_delta == 0 ) {
+        return;
+    }
+
+    const int shift = ( rotation_delta + 4 ) % 4;
+
+    // The array of neighbors is actually logically more like two independent arrays smashed
+    // together, so we need to first rotate the cardinal directions section, and then the
+    // ordinal directions section. They both rotate the same direction.
+    std::rotate( t_nesw.begin(), t_nesw.begin() + shift, t_nesw.begin() + 4 );
+    std::rotate( t_nesw.begin() + 4, t_nesw.begin() + 4 + shift, t_nesw.end() );
 }
 
 mapgendata::mapgendata( const mapgendata &other,
@@ -103,6 +145,14 @@ mapgendata::mapgendata( const mapgendata &other,
     mapgendata( other )
 {
     mapgen_args_.merge( mapgen_args );
+}
+
+mapgendata::mapgendata( const mapgendata &other,
+                        const mapgen_arguments &mapgen_args,
+                        const enum_bitset<jmapgen_flags> &flags ) :
+    mapgendata( other, mapgen_args )
+{
+    mapgen_flags_ = flags;
 }
 
 void mapgendata::set_dir( int dir_in, int val )
@@ -176,7 +226,7 @@ int &mapgendata::dir( int dir_in )
     }
 }
 
-void mapgendata::square_groundcover( const point &p1, const point &p2 ) const
+void mapgendata::square_groundcover( const point_bub_ms &p1, const point_bub_ms &p2 ) const
 {
     m.draw_square_ter( default_groundcover, p1, p2 );
 }
@@ -197,10 +247,15 @@ bool mapgendata::is_groundcover( const ter_id &iid ) const
     return false;
 }
 
+bool mapgendata::has_flag( jmapgen_flags f ) const
+{
+    return mapgen_flags_.test( f );
+}
+
 ter_id mapgendata::groundcover() const
 {
     const ter_id *tid = default_groundcover.pick();
-    return tid != nullptr ? *tid : t_null;
+    return tid != nullptr ? *tid : ter_str_id::NULL_ID().id();
 }
 
 const oter_id &mapgendata::neighbor_at( om_direction::type dir ) const
@@ -259,4 +314,27 @@ bool mapgendata::has_join( const cube_direction dir, const std::string &join_id 
 {
     auto it = joins.find( dir );
     return it != joins.end() && it->second == join_id;
+}
+
+bool mapgendata::has_predecessor() const
+{
+    return !predecessors_.empty();
+}
+
+const oter_id &mapgendata::last_predecessor() const
+{
+    if( predecessors_.empty() ) {
+        debugmsg( "Tried to get predecessor when none available in mapgendata" );
+        static const oter_id null( oter_str_id::NULL_ID() );
+        return null;
+    }
+    return predecessors_.back();
+}
+
+void mapgendata::pop_last_predecessor()
+{
+    if( predecessors_.empty() ) {
+        debugmsg( "Tried to pop predecessor when none available in mapgendata" );
+    }
+    predecessors_.pop_back();
 }

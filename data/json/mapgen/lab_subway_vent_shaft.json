@@ -10,7 +10,7 @@
       ",": "t_region_groundcover_urban",
       ".": "t_metal_floor_no_roof",
       "=": "t_metal_ventilation_shutter",
-      "`": "t_hole",
+      "`": "t_open_air",
       "w": "t_bridge",
       "~": "t_water_pool_shallow",
       "<": "t_ladder_up",
@@ -26,7 +26,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft_roof" ],
-    "weight": 1000,
     "object": {
       "fill_ter": "t_open_air",
       "rows": [
@@ -62,7 +61,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft_surface" ],
-    "weight": 1000,
     "object": {
       "predecessor_mapgen": "forest",
       "rows": [
@@ -91,6 +89,7 @@
         "                        ",
         "                        "
       ],
+      "flags": [ "ERASE_ALL_BEFORE_PLACING_TERRAIN" ],
       "palettes": [ "lab_subway_vent_shaft" ]
     }
   },
@@ -98,7 +97,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft-1" ],
-    "weight": 1000,
     "object": {
       "rows": [
         "000000000000000000000000",
@@ -133,7 +131,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft-2" ],
-    "weight": 1000,
     "object": {
       "rows": [
         "########################",
@@ -168,7 +165,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft-3" ],
-    "weight": 1000,
     "object": {
       "rows": [
         "########################",
@@ -203,7 +199,6 @@
     "type": "mapgen",
     "method": "json",
     "om_terrain": [ "lab_subway_vent_shaft-4" ],
-    "weight": 1000,
     "object": {
       "rows": [
         "########################",

@@ -1,12 +1,13 @@
 #include "shearing.h"
 
+#include <algorithm>
 #include <vector>
 
+#include "flexbuffer_json.h"
 #include "generic_factory.h"
 #include "monster.h"
 #include "rng.h"
 #include "units.h"
-
 
 shearing_roll shearing_entry::roll( const monster &mon ) const
 {
