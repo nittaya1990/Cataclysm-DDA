@@ -1,0 +1,7 @@
+[
+  {
+    "type": "effect_on_condition",
+    "id": "scenario_fractal_facility",
+    "effect": [ { "math": [ "SAFEPOINT_INTERVAL = 5" ] }, { "math": [ "ISO_CURRENT_LEVEL = 1" ] } ]
+  }
+]

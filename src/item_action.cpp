@@ -1,56 +1,58 @@
 #include "item_action.h"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <list>
 #include <memory>
-#include <new>
+#include <optional>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 
 #include "avatar.h"
-#include "calendar.h"
-#include "catacharset.h"
 #include "character.h"
 #include "clone_ptr.h"
+#include "coordinates.h"
 #include "debug.h"
 #include "flag.h"
+#include "flexbuffer_json.h"
 #include "game.h"
-#include "input.h"
+#include "input_context.h"
+#include "input_enums.h"
 #include "inventory.h"
 #include "item.h"
 #include "item_contents.h"
 #include "item_factory.h"
+#include "item_location.h"
 #include "item_pocket.h"
 #include "itype.h"
 #include "iuse.h"
-#include "json.h"
 #include "make_static.h"
-#include "optional.h"
 #include "output.h"
 #include "pimpl.h"
+#include "pocket_type.h"
 #include "ret_val.h"
 #include "string_formatter.h"
 #include "translations.h"
 #include "type_id.h"
 #include "ui.h"
+#include "visitable.h"
 
-class Character;
+class map;
 
 static const std::string errstring( "ERROR" );
 
-struct tripoint;
-
 static item_action nullaction;
 
-static cata::optional<input_event> key_bound_to( const input_context &ctxt,
+static std::optional<input_event> key_bound_to( const input_context &ctxt,
         const item_action_id &act )
 {
     const std::vector<input_event> keys = ctxt.keys_bound_to( act, /*maximum_modifier_count=*/1 );
     if( keys.empty() ) {
-        return cata::nullopt;
+        return std::nullopt;
     } else {
         return keys.front();
     }
@@ -82,10 +84,9 @@ item_action_generator::item_action_generator() = default;
 
 item_action_generator::~item_action_generator() = default;
 
-// Get use methods of this item and its contents
-bool item::item_has_uses_recursive() const
+bool item::item_has_uses_recursive( bool contents_only ) const
 {
-    if( !type->use_methods.empty() ) {
+    if( !contents_only && !type->use_methods.empty() ) {
         return true;
     }
 
@@ -95,7 +96,7 @@ bool item::item_has_uses_recursive() const
 bool item_contents::item_has_uses_recursive() const
 {
     for( const item_pocket &pocket : contents ) {
-        if( pocket.is_type( item_pocket::pocket_type::CONTAINER ) &&
+        if( pocket.is_type( pocket_type::CONTAINER ) &&
             pocket.item_has_uses_recursive() ) {
             return true;
         }
@@ -155,7 +156,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
 
             const use_function *func = actual_item->get_use( use );
             if( !( func && func->get_actor_ptr() &&
-                   func->get_actor_ptr()->can_use( you, *actual_item, false, you.pos() ).success() ) ) {
+                   func->get_actor_ptr()->can_use( you, *actual_item, you.pos_bub() ).success() ) ) {
                 continue;
             }
 
@@ -169,6 +170,11 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
                 continue;
             }
 
+            // Prevent drinking frozen liquids that have specific use actions (ex: ALCOHOL)
+            if( actual_item->is_frozen_liquid() ) {
+                continue;
+            }
+
             // Add to usable items if it needs less charges per use or has less charges
             auto found = candidates.find( use );
             bool better = false;
@@ -179,7 +185,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
                     continue; // Other item consumes less charges
                 }
 
-                if( found->second->ammo_remaining() > actual_item->ammo_remaining() ) {
+                if( found->second->ammo_remaining( ) > actual_item->ammo_remaining( ) ) {
                     better = true; // Items with less charges preferred
                 }
             }
@@ -202,7 +208,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
 
 std::string item_action_generator::get_action_name( const item_action_id &id ) const
 {
-    const auto &act = get_action( id );
+    const item_action &act = get_action( id );
     if( !act.name.empty() ) {
         return act.name.translated();
     }
@@ -241,7 +247,7 @@ void item_action_generator::load_item_action( const JsonObject &jo )
 void item_action_generator::check_consistency() const
 {
     for( const auto &elem : item_actions ) {
-        const auto &action = elem.second;
+        const item_action &action = elem.second;
         if( !item_controller->has_iuse( action.id ) ) {
             debugmsg( "Item action \"%s\" isn't known to the game.  Check item action definitions in JSON.",
                       action.id.c_str() );
@@ -251,7 +257,7 @@ void item_action_generator::check_consistency() const
 
 void game::item_action_menu( item_location loc )
 {
-    const auto &gen = item_action_generator::generator();
+    const item_action_generator &gen = item_action_generator::generator();
     const action_map &item_actions = gen.get_item_action_map();
     std::vector<item *> pseudos;
     bool use_player_inventory = false;
@@ -264,6 +270,9 @@ void game::item_action_menu( item_location loc )
             pseudos.push_back( const_cast<item *>( pseudo ) );
         }
     } else {
+        if( loc.get_item()->type->has_use() ) {
+            pseudos.push_back( const_cast< item * >( loc.get_item() ) );
+        }
         loc.get_item()->visit_contents( [&pseudos]( item * node, item * ) {
             if( node->type->use_methods.empty() ) {
                 return VisitResponse::NEXT;
@@ -278,6 +287,7 @@ void game::item_action_menu( item_location loc )
     }
 
     uilist kmenu;
+    kmenu.desc_enabled = true;
     kmenu.text = _( "Execute which action?" );
     kmenu.input_category = "ITEM_ACTIONS";
     input_context ctxt( "ITEM_ACTIONS", keyboard_mode::keycode );
@@ -293,12 +303,11 @@ void game::item_action_menu( item_location loc )
         return iactions.find( action ) != iactions.end();
     };
 
-    std::vector<std::tuple<item_action_id, std::string, std::string>> menu_items;
+    std::vector<std::tuple<item_action_id, std::string, std::string, std::string>> menu_items;
     // Sorts menu items by action.
     using Iter = decltype( menu_items )::iterator;
     const auto sort_menu = []( Iter from, Iter to ) {
-        std::sort( from, to, []( const std::tuple<item_action_id, std::string, std::string> &lhs,
-        const std::tuple<item_action_id, std::string, std::string> &rhs ) {
+        std::sort( from, to, []( const auto & lhs, const auto & rhs ) {
             return std::get<1>( lhs ).compare( std::get<1>( rhs ) ) < 0;
         } );
     };
@@ -312,53 +321,52 @@ void game::item_action_menu( item_location loc )
                 ss += string_format( "(%d kJ)", elem.second->ammo_required() );
             } else {
                 auto iter = elem.second->type->ammo_scale.find( elem.first );
-                ss += string_format( "(-%d)", int( elem.second->ammo_required() * ( iter ==
-                                                   elem.second->type->ammo_scale.end() ? 1 : double( iter->second ) ) ) );
+                ss += string_format( "(-%d)", elem.second->ammo_required() * ( iter ==
+                                     elem.second->type->ammo_scale.end() ? 1 : iter->second ) );
             }
 
         }
 
         const use_function *method = elem.second->get_use( elem.first );
         if( method ) {
-            return std::make_tuple( method->get_type(), method->get_name(), ss );
+            return std::make_tuple( method->get_type(), method->get_name(), ss, method->get_description() );
         } else {
-            return std::make_tuple( errstring, std::string( "NO USE FUNCTION" ), ss );
+            return std::make_tuple( errstring, std::string( "NO USE FUNCTION" ), ss, std::string() );
         }
     } );
     // Sort mapped actions.
     sort_menu( menu_items.begin(), menu_items.end() );
-    // Add unmapped but binded actions to the menu vector.
-    for( const auto &elem : item_actions ) {
-        if( key_bound_to( ctxt, elem.first ).has_value() && !assigned_action( elem.first ) ) {
-            menu_items.emplace_back( elem.first, gen.get_action_name( elem.first ), "-" );
+    if( !loc ) {
+        // Add unmapped but binded actions to the menu vector.
+        for( const auto &elem : item_actions ) {
+            if( key_bound_to( ctxt, elem.first ).has_value() && !assigned_action( elem.first ) ) {
+                menu_items.emplace_back( elem.first, gen.get_action_name( elem.first ), "-", std::string() );
+            }
         }
     }
     // Sort unmapped actions.
     auto iter = menu_items.begin();
     std::advance( iter, iactions.size() );
     sort_menu( iter, menu_items.end() );
-    // Determine max lengths, to print the menu nicely.
-    std::pair<int, int> max_len;
-    for( const auto &elem : menu_items ) {
-        max_len.first = std::max( max_len.first, utf8_width( std::get<1>( elem ), true ) );
-        max_len.second = std::max( max_len.second, utf8_width( std::get<2>( elem ), true ) );
-    }
     // Fill the menu.
     for( const auto &elem : menu_items ) {
         std::string ss;
         ss += std::get<1>( elem );
-        ss += std::string( max_len.first - utf8_width( std::get<1>( elem ), true ), ' ' );
-        ss += std::string( 4, ' ' );
 
-        ss += std::get<2>( elem );
-        ss += std::string( max_len.second - utf8_width( std::get<2>( elem ), true ), ' ' );
+        std::string ss_ctxt;
+        ss_ctxt += std::get<2>( elem );
 
-        const cata::optional<input_event> bind = key_bound_to( ctxt, std::get<0>( elem ) );
+        const std::optional<input_event> bind = key_bound_to( ctxt, std::get<0>( elem ) );
         const bool enabled = assigned_action( std::get<0>( elem ) );
+        const std::string desc =  std::get<3>( elem ) ;
 
-        kmenu.addentry( num, enabled, bind, ss );
+        kmenu.addentry_desc( num, enabled, bind, ss, desc );
+        kmenu.entries[num].ctxt = ss_ctxt;
         num++;
     }
+
+    kmenu.footer_text = string_format( _( "[<color_yellow>%s</color>] keybindings" ),
+                                       ctxt.get_desc( "HELP_KEYBINDINGS" ) );
 
     kmenu.query();
     if( kmenu.ret < 0 || kmenu.ret >= static_cast<int>( iactions.size() ) ) {
@@ -383,9 +391,15 @@ std::string use_function::get_type() const
     }
 }
 
-ret_val<bool> iuse_actor::can_use( const Character &, const item &, bool, const tripoint & ) const
+ret_val<void> iuse_actor::can_use( const Character &, const item &, const tripoint_bub_ms & ) const
 {
-    return ret_val<bool>::make_success();
+    return ret_val<void>::make_success();
+}
+
+ret_val<void> iuse_actor::can_use( const Character &, const item &, map *,
+                                   const tripoint_bub_ms & ) const
+{
+    return ret_val<void>::make_success();
 }
 
 bool iuse_actor::is_valid() const
@@ -398,6 +412,11 @@ std::string iuse_actor::get_name() const
     return item_action_generator::generator().get_action_name( type );
 }
 
+std::string iuse_actor::get_description() const
+{
+    return std::string();
+}
+
 std::string use_function::get_name() const
 {
     if( actor ) {
@@ -407,3 +426,11 @@ std::string use_function::get_name() const
     }
 }
 
+std::string use_function::get_description() const
+{
+    if( actor ) {
+        return actor->get_description();
+    } else {
+        return errstring;
+    }
+}

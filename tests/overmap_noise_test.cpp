@@ -1,14 +1,18 @@
+#include <filesystem>
+#include <fstream>
+#include <string>
+
 #include "cata_catch.h"
 #include "coordinates.h"
-#include "filesystem.h"
-#include "game_constants.h"
+#include "map_scale_constants.h"
 #include "overmap_noise.h"
+#include "point.h"
 
 static void export_raw_noise( const std::string &filename, const om_noise::om_noise_layer &noise,
                               int width, int height )
 {
-    cata::ofstream testfile;
-    testfile.open( fs::u8path( filename ), std::ofstream::trunc );
+    std::ofstream testfile;
+    testfile.open( std::filesystem::u8path( filename ), std::ofstream::trunc );
     testfile << "P2" << std::endl;
     testfile << width << " " << height << std::endl;
     testfile << "255" << std::endl;
@@ -27,8 +31,8 @@ static void export_interpreted_noise(
     const std::string &filename, const om_noise::om_noise_layer &noise, int width, int height,
     float threshold )
 {
-    cata::ofstream testfile;
-    testfile.open( fs::u8path( filename ), std::ofstream::trunc );
+    std::ofstream testfile;
+    testfile.open( std::filesystem::u8path( filename ), std::ofstream::trunc );
     testfile << "P2" << std::endl;
     testfile << width << " " << height << std::endl;
     testfile << "255" << std::endl;

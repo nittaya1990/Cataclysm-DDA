@@ -1,186 +1,128 @@
+#include <algorithm>
+#include <cstddef>
+#include <functional>
+#include <iterator>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "activity_actor_definitions.h"
 #include "character.h"
+#include "color.h"
+#include "coordinates.h"
+#include "debug.h"
+#include "enums.h"
 #include "flag.h"
 #include "item.h"
+#include "item_location.h"
 #include "itype.h"
+#include "map.h"
 #include "map_selector.h"
+#include "player_activity.h"
+#include "ret_val.h"
+#include "string_formatter.h"
+#include "translations.h"
+#include "type_id.h"
+#include "ui.h"
+#include "value_ptr.h"
 #include "vehicle_selector.h"
+#include "visitable.h"
+
+static const itype_id itype_large_repairkit( "large_repairkit" );
+static const itype_id itype_small_repairkit( "small_repairkit" );
 
 static const trait_id trait_DEBUG_HS( "DEBUG_HS" );
-static const itype_id itype_small_repairkit( "small_repairkit" );
-static const itype_id itype_large_repairkit( "large_repairkit" );
 
 template <typename T, typename Output>
 void find_ammo_helper( T &src, const item &obj, bool empty, Output out, bool nested )
 {
-    if( obj.is_watertight_container() ) {
-        if( !obj.is_container_empty() ) {
+    src.visit_items( [&src, &nested, &out, &obj, empty]( item * node, item * parent ) {
 
-            // Look for containers with the same type of liquid as that already in our container
-            src.visit_items( [&src, &nested, &out, &obj]( item * node, item * parent ) {
-                if( node == &obj ) {
-                    // This stops containers and magazines counting *themselves* as ammo sources
-                    return VisitResponse::SKIP;
-                }
-                // Prevents reloading with items frozen in watertight containers.
-                if( parent != nullptr && parent->is_watertight_container() && node->is_frozen_liquid() ) {
-                    return VisitResponse::SKIP;
-                }
-
-                // Liquids not in a watertight container are skipped.
-                if( parent != nullptr && !parent->is_watertight_container() &&
-                    node->made_of( phase_id::LIQUID ) ) {
-                    return VisitResponse::SKIP;
-                }
-
-                // Spills have no parent.
-                if( parent == nullptr && node->made_of_from_type( phase_id::LIQUID ) ) {
-                    return VisitResponse::SKIP;
-                }
-
-                if( !nested && node->is_container() && parent != nullptr && parent->is_container() ) {
-                    return VisitResponse::SKIP;
-                }
-
-                if( node->made_of_from_type( phase_id::LIQUID ) ) {
-                    out = item_location( item_location( src, parent ), node );
-                }
-
-                return VisitResponse::NEXT;
-            } );
-        } else {
-            // Look for containers with any liquid and loose frozen liquids
-            src.visit_items( [&src, &nested, &out]( item * node, item * parent ) {
-                // Prevents reloading with items frozen in watertight containers.
-                if( parent != nullptr && parent->is_watertight_container() && node->is_frozen_liquid() ) {
-                    return VisitResponse::SKIP;
-                }
-
-                // Liquids not in a watertight container are skipped.
-                if( parent != nullptr && !parent->is_watertight_container() &&
-                    node->made_of( phase_id::LIQUID ) ) {
-                    return VisitResponse::SKIP;
-                }
-
-                // Spills have no parent.
-                if( parent == nullptr && node->made_of_from_type( phase_id::LIQUID ) ) {
-                    return VisitResponse::SKIP;
-                }
-
-                if( !nested && node->is_container() && parent != nullptr && parent->is_container() ) {
-                    return VisitResponse::SKIP;
-                }
-
-                if( node->made_of_from_type( phase_id::LIQUID ) ) {
-                    out = item_location( item_location( src, parent ), node );
-                }
-
-                return VisitResponse::NEXT;
-            } );
+        // This stops containers and magazines counting *themselves* as ammo sources
+        if( node == &obj ) {
+            return VisitResponse::SKIP;
         }
-    }
-    if( obj.magazine_integral() ) {
-        // find suitable ammo excluding that already loaded in magazines
-        std::set<ammotype> ammo = obj.ammo_types();
 
-        src.visit_items( [&src, &nested, &out, ammo]( item * node, item * parent ) {
-            if( !node->made_of_from_type( phase_id::SOLID ) && parent == nullptr ) {
-                // some liquids are ammo but we can't reload with them unless within a container or frozen
+        // Spills are not valid. spilled liquids have no parent.
+        if( parent == nullptr && node->made_of_from_type( phase_id::LIQUID ) ) {
+            return VisitResponse::SKIP;
+        }
+
+        // Frozen liquids can't be loaded
+        if( node->is_frozen_liquid() ) {
+            return VisitResponse::SKIP;
+        }
+
+        // Do not steal ammo from magazines
+        if( parent != nullptr && parent->is_magazine() ) {
+            return VisitResponse::SKIP;
+        }
+
+        // Do not steal magazines from other items
+        if( parent != nullptr && node == parent->magazine_current() ) {
+            return VisitResponse::SKIP;
+        }
+
+        // Do not consider empty mags unless specified
+        if( node->is_magazine() && !node->ammo_remaining( ) && !empty ) {
+            return VisitResponse::SKIP;
+        }
+
+        if( node->has_flag( flag_SPEEDLOADER ) && obj.magazine_integral() ) {
+            // Can't reload with empty speedloaders
+            if( !node->ammo_remaining( ) ) {
                 return VisitResponse::SKIP;
             }
-            if( !node->made_of( phase_id::SOLID ) && parent != nullptr ) {
-                for( const ammotype &at : ammo ) {
-                    if( node->ammo_type() == at ) {
-                        out = item_location( src, node );
-                    }
-                }
-                return VisitResponse::SKIP;
-            }
-
-            // Solid ammo gets skipped earlier than non-solid because it does not need a container.
-            if( !nested && parent != nullptr && parent->is_container() &&
-                !node->made_of_from_type( phase_id::LIQUID ) && !node->made_of( phase_id::GAS ) ) {
-                return VisitResponse::SKIP;
-            }
-
-            if( !nested && node->is_container() && parent != nullptr && parent->is_container() ) {
-                return VisitResponse::SKIP;
-            }
-
-            // ammo is inside some sort of a container
-            if( parent != nullptr && parent->is_container() ) {
-                for( const ammotype &at : ammo ) {
-                    if( node->ammo_type() == at ) {
-                        out = item_location( item_location( src, parent ), node );
-                    }
-                }
-                if( node->is_magazine() &&
-                    ( parent == nullptr || node != parent->magazine_current() ) &&
-                    node->has_flag( flag_SPEEDLOADER ) ) {
-                    if( node->ammo_remaining() ) {
-                        out = item_location( item_location( src, parent ), node );
-                    }
-                }
-                return VisitResponse::NEXT;
-            }
-
-            // everything else, probably?
-            for( const ammotype &at : ammo ) {
-                if( node->ammo_type() == at ) {
-                    out = item_location( src, node );
-                }
-            }
-            if( node->is_magazine() &&
-                ( parent == nullptr || node != parent->magazine_current() ) &&
-                node->has_flag( flag_SPEEDLOADER ) ) {
-                if( node->ammo_remaining() ) {
-                    out = item_location( src, node );
-                }
-            }
-            return VisitResponse::NEXT;
-        } );
-    } else {
-        // find compatible magazines excluding those already loaded in tools/guns
-        src.visit_items( [&src, &nested, &out, &obj, empty]( item * node, item * parent ) {
-            // magazine is inside some sort of a container
-            if( node->is_magazine() && ( parent != nullptr && node != parent->magazine_current() &&
-                                         parent->is_container() ) ) {
-                if( obj.can_contain( *node, true ).success() && ( node->ammo_remaining() || empty ) ) {
+            // All speedloaders are accepted.
+            // Ammo check is done somewhere else
+            // Ammo check should probably happen here...
+            if( obj.can_reload_with( *node, true ) ) {
+                if( parent != nullptr ) {
                     out = item_location( item_location( src, parent ), node );
-                }
-                return VisitResponse::SKIP;
-            }
-            //everything else, probably?
-            if( node->is_magazine() &&
-                ( parent == nullptr || node != parent->magazine_current() ) ) {
-                if( obj.can_contain( *node, true ).success() && ( node->ammo_remaining() || empty ) ) {
+                } else {
                     out = item_location( src, node );
                 }
-                return VisitResponse::SKIP;
             }
-            return nested ? VisitResponse::NEXT : VisitResponse::SKIP;
-        } );
-    }
+            return VisitResponse::SKIP;
+        }
+
+        if( obj.can_reload_with( *node, true ) ) {
+            if( parent != nullptr ) {
+                out = item_location( item_location( src, parent ), node );
+            } else {
+                out = item_location( src, node );
+            }
+        }
+
+        // Not-nested checks only top level containers and their immediate contents.
+        return parent == nullptr || nested ? VisitResponse::NEXT : VisitResponse::SKIP;
+
+    } );
 }
 
 std::vector<const item *> Character::get_ammo( const ammotype &at ) const
 {
-    return items_with( [at]( const item & it ) {
+    return cache_get_items_with( "is_ammo", &item::is_ammo, [at]( const item & it ) {
         return it.ammo_type() == at;
     } );
 }
 
 std::vector<item_location> Character::find_ammo( const item &obj, bool empty, int radius ) const
 {
+    map &here = get_map();
+
     std::vector<item_location> res;
 
     find_ammo_helper( const_cast<Character &>( *this ), obj, empty, std::back_inserter( res ), true );
 
     if( radius >= 0 ) {
-        for( auto &cursor : map_selector( pos(), radius ) ) {
+        for( map_cursor &cursor : map_selector( pos_bub(), radius ) ) {
             find_ammo_helper( cursor, obj, empty, std::back_inserter( res ), false );
         }
-        for( auto &cursor : vehicle_selector( pos(), radius ) ) {
+        for( vehicle_cursor &cursor : vehicle_selector( here, pos_bub( here ), radius ) ) {
             find_ammo_helper( cursor, obj, empty, std::back_inserter( res ), false );
         }
     }
@@ -188,7 +130,8 @@ std::vector<item_location> Character::find_ammo( const item &obj, bool empty, in
     return res;
 }
 
-std::pair<int, int> Character::gunmod_installation_odds( const item &gun, const item &mod ) const
+std::pair<int, int> Character::gunmod_installation_odds( const item_location &gun,
+        const item &mod ) const
 {
     // Mods with INSTALL_DIFFICULT have a chance to fail, potentially damaging the gun
     if( !mod.has_flag( flag_INSTALL_DIFFICULT ) || has_trait( trait_DEBUG_HS ) ) {
@@ -197,12 +140,12 @@ std::pair<int, int> Character::gunmod_installation_odds( const item &gun, const 
 
     int roll = 100; // chance of success (%)
     int risk = 0;   // chance of failure (%)
-    int chances = 1; // start with 1 in 6 (~17% chance)
+    float chances = 1.0f; // start with 1 in 6 (~17% chance)
 
     for( const auto &e : mod.type->min_skills ) {
         // gain an additional chance for every level above the minimum requirement
-        skill_id sk = e.first.str() == "weapon" ? gun.gun_skill() : e.first;
-        chances += std::max( get_skill_level( sk ) - e.second, 0 );
+        skill_id sk = e.first.str() == "weapon" ? gun->gun_skill() : e.first;
+        chances += std::max( get_greater_skill_or_knowledge_level( sk )  - e.second, 0.0f );
     }
     // cap success from skill alone to 1 in 5 (~83% chance)
     roll = std::min( static_cast<double>( chances ), 5.0 ) / 6.0 * 100;
@@ -212,11 +155,11 @@ std::pair<int, int> Character::gunmod_installation_odds( const item &gun, const 
     roll += ( get_dex() - 12 ) * 2;
     roll += ( get_int() - 12 ) * 2;
     // each level of damage to the base gun reduces success by 10%
-    roll -= std::max( gun.damage_level(), 0 ) * 10;
+    roll -= gun->damage_level() * 10;
     roll = std::min( std::max( roll, 0 ), 100 );
 
     // risk of causing damage on failure increases with less durable guns
-    risk = ( 100 - roll ) * ( ( 10.0 - std::min( gun.type->gun->durability, 9 ) ) / 10.0 );
+    risk = ( 100 - roll ) * ( ( 10.0 - std::min( gun->type->gun->durability, 9 ) ) / 10.0 );
 
     return std::make_pair( roll, risk );
 }
@@ -238,8 +181,28 @@ void Character::gunmod_add( item &gun, item &mod )
         return;
     }
 
+    itype_id mod_type = mod.typeId();
+    std::string mod_name = mod.tname();
+
+    if( !wield( gun ) ) {
+        add_msg_if_player( _( "You can't wield the %1$s." ), gun.tname() );
+        return;
+    }
+
+    // Wielding will create a new gun and/or mod when the item changes location.
+    item_location wielded_gun = get_wielded_item();
+    std::vector<item *> mods = items_with( [&mod_type]( const item & it ) {
+        return it.typeId() == mod_type;
+    } );
+
+    if( mods.empty() ) {
+        add_msg_if_player( _( "You no longer have a %s and can't continue crafting." ), mod_name );
+        return;
+    }
+
+    item &moved_mod = *mods.front();
     // any (optional) tool charges that are used during installation
-    auto odds = gunmod_installation_odds( gun, mod );
+    auto odds = gunmod_installation_odds( wielded_gun, moved_mod );
     int roll = odds.first;
     int risk = odds.second;
 
@@ -248,8 +211,8 @@ void Character::gunmod_add( item &gun, item &mod )
 
     if( mod.is_irremovable() ) {
         if( !query_yn( _( "Permanently install your %1$s in your %2$s?" ),
-                       colorize( mod.tname(), mod.color_in_inventory() ),
-                       colorize( gun.tname(), gun.color_in_inventory() ) ) ) {
+                       colorize( moved_mod.tname(), moved_mod.color_in_inventory() ),
+                       colorize( wielded_gun->tname(), wielded_gun->color_in_inventory() ) ) ) {
             add_msg_if_player( _( "Never mind." ) );
             return; // player canceled installation
         }
@@ -258,8 +221,8 @@ void Character::gunmod_add( item &gun, item &mod )
     // if chance of success <100% prompt user to continue
     if( roll < 100 ) {
         uilist prompt;
-        prompt.text = string_format( _( "Attach your %1$s to your %2$s?" ), mod.tname(),
-                                     gun.tname() );
+        prompt.text = string_format( _( "Attach your %1$s to your %2$s?" ), moved_mod.tname(),
+                                     wielded_gun->tname() );
 
         std::vector<std::function<void()>> actions;
 
@@ -295,11 +258,11 @@ void Character::gunmod_add( item &gun, item &mod )
         actions[prompt.ret]();
     }
 
-    const int moves = !has_trait( trait_DEBUG_HS ) ? mod.type->gunmod->install_time : 0;
+    const int moves = !has_trait( trait_DEBUG_HS ) ? moved_mod.type->gunmod->install_time : 0;
 
-    assign_activity( activity_id( "ACT_GUNMOD_ADD" ), moves, -1, 0, tool );
-    activity.targets.emplace_back( *this, &gun );
-    activity.targets.emplace_back( *this, &mod );
+    assign_activity( gunmod_add_activity_actor( moves, tool ) );
+    activity.targets.emplace_back( wielded_gun );
+    activity.targets.emplace_back( *this, &moved_mod );
     activity.values.push_back( 0 ); // dummy value
     activity.values.push_back( roll ); // chance of success (%)
     activity.values.push_back( risk ); // chance of damage (%)
@@ -328,28 +291,28 @@ bool Character::gunmod_remove( item &gun, item &mod )
     // Removing gunmod takes only half as much time as installing it
     const int moves = has_trait( trait_DEBUG_HS ) ? 0 : mod.type->gunmod->install_time / 2;
     item_location gun_loc = item_location( *this, &gun );
-    assign_activity(
-        player_activity(
-            gunmod_remove_activity_actor( moves, gun_loc, static_cast<int>( gunmod_idx ) ) ) );
+    assign_activity( gunmod_remove_activity_actor( moves, gun_loc, static_cast<int>( gunmod_idx ) ) );
     return true;
 }
 
 bool Character::has_gun_for_ammo( const ammotype &at ) const
 {
-    return has_item_with( [at]( const item & it ) {
-        // item::ammo_type considers the active gunmod.
-        return it.is_gun() && it.ammo_types().count( at );
+    return cache_has_item_with( "is_gun", &item::is_gun, [&at]( const item & it ) {
+        return it.ammo_types().count( at );
     } );
 }
 
 bool Character::has_magazine_for_ammo( const ammotype &at ) const
 {
-    return has_item_with( [&at]( const item & it ) {
+    if( cache_has_item_with( "is_magazine", &item::is_magazine, [&at]( const item & it ) {
+    return !it.has_flag( flag_NO_RELOAD ) && it.ammo_types().count( at );
+    } ) ) {
+        return true;
+    }
+    return cache_has_item_with( "is_gun", &item::is_gun, [&at]( const item & it ) {
         return !it.has_flag( flag_NO_RELOAD ) &&
-               ( ( it.is_magazine() && it.ammo_types().count( at ) ) ||
-                 ( it.is_gun() && it.magazine_integral() && it.ammo_types().count( at ) ) ||
-                 ( it.is_gun() && it.magazine_current() != nullptr &&
-                   it.magazine_current()->ammo_types().count( at ) ) );
+               ( ( it.magazine_integral() && it.ammo_types().count( at ) ) ||
+                 ( it.magazine_current() != nullptr && it.magazine_current()->ammo_types().count( at ) ) );
     } );
 }
 

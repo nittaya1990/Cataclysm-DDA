@@ -1,5 +1,11 @@
+#include <algorithm>
+
 #include "character.h"
 #include "contents_change_handler.h"
+#include "debug.h"
+#include "flexbuffer_json.h"
+#include "item_pocket.h"
+#include "json.h"
 
 void contents_change_handler::add_unsealed( const item_location &loc )
 {
@@ -12,7 +18,7 @@ void contents_change_handler::unseal_pocket_containing( const item_location &loc
 {
     if( loc.has_parent() ) {
         item_location parent = loc.parent_item();
-        item_pocket *const pocket = parent->contained_where( *loc );
+        item_pocket *const pocket = loc.parent_pocket();
         if( pocket ) {
             // on_contents_changed restacks the pocket and should be called later
             // in Character::handle_contents_changed
@@ -42,7 +48,7 @@ void contents_change_handler::serialize( JsonOut &jsout ) const
     jsout.write( unsealed );
 }
 
-void contents_change_handler::deserialize( JsonIn &jsin )
+void contents_change_handler::deserialize( const JsonValue &jsin )
 {
     jsin.read( unsealed );
 }

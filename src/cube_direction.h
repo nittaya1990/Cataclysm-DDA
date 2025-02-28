@@ -1,9 +1,12 @@
+#pragma once
 #ifndef CATA_SRC_CUBE_DIRECTION_H
 #define CATA_SRC_CUBE_DIRECTION_H
 
+#include <cstddef>
 #include <functional>
 
-#include "enum_traits.h"
+struct tripoint;
+template <typename E> struct enum_traits;
 
 namespace om_direction
 {
@@ -37,8 +40,11 @@ template <> struct hash<cube_direction> {
 };
 } // namespace std
 
-cube_direction operator+( const cube_direction, const om_direction::type );
-cube_direction operator+( const cube_direction, int i );
-cube_direction operator-( const cube_direction, int i );
+cube_direction operator+( cube_direction, om_direction::type );
+cube_direction operator+( cube_direction, int i );
+cube_direction operator-( cube_direction, om_direction::type );
+cube_direction operator-( cube_direction, int i );
+
+tripoint displace( cube_direction d );
 
 #endif // CATA_SRC_CUBE_DIRECTION_H

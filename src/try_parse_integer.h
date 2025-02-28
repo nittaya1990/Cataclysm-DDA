@@ -2,6 +2,8 @@
 #ifndef CATA_SRC_TRY_PARSE_INTEGER_H
 #define CATA_SRC_TRY_PARSE_INTEGER_H
 
+#include <string_view>
+
 #include "ret_val.h"
 
 /**
@@ -13,11 +15,11 @@
  * player-input values, and false for values from e.g. game data files.
  */
 template<typename T>
-ret_val<T> try_parse_integer( const std::string &, bool use_locale );
+ret_val<T> try_parse_integer( std::string_view, bool use_locale );
 
-extern template ret_val<int> try_parse_integer<int>( const std::string &, bool use_locale );
-extern template ret_val<long> try_parse_integer<long>( const std::string &, bool use_locale );
-extern template ret_val<long long> try_parse_integer<long long>(
-    const std::string &, bool use_locale );
+extern template ret_val<int> try_parse_integer<int>( std::string_view, bool use_locale );
+extern template ret_val<long> try_parse_integer<long>( std::string_view, bool use_locale );
+extern template ret_val<long long> try_parse_integer<long long>( std::string_view,
+        bool use_locale );
 
 #endif // CATA_SRC_TRY_PARSE_INTEGER_H

@@ -2,17 +2,32 @@
 #ifndef CATA_SRC_MAPGENDATA_H
 #define CATA_SRC_MAPGENDATA_H
 
+#include <array>
+#include <cstddef>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include "calendar.h"
 #include "cata_variant.h"
-#include "coordinates.h"
+#include "coords_fwd.h"
 #include "cube_direction.h"
+#include "debug.h"
+#include "enum_bitset.h"
+#include "jmapgen_flags.h"
 #include "type_id.h"
 #include "weighted_list.h"
 
+// IWYU pragma: no_forward_declare jmapgen_flags
+// IWYU pragma: no_forward_declare cube_direction
+class JsonOut;
 class JsonValue;
 class map;
 class mission;
-struct point;
+enum class direction : unsigned int;
+enum class mapgen_phase;
 struct regional_settings;
 
 namespace om_direction
@@ -21,12 +36,42 @@ enum class type : int;
 } // namespace om_direction
 
 struct mapgen_arguments {
+    mapgen_arguments() = default;
+
+    template <
+        typename InputRange,
+        std::enable_if_t <
+            std::is_same_v <
+                typename InputRange::value_type, std::pair<std::string, cata_variant>
+                > ||
+            std::is_same_v <
+                typename InputRange::value_type, std::pair<const std::string, cata_variant>
+                >
+            > * = nullptr >
+    explicit mapgen_arguments( const InputRange &map_ )
+        : map( map_.begin(), map_.end() )
+    {}
+
     std::unordered_map<std::string, cata_variant> map;
+
+    bool operator==( const mapgen_arguments &other ) const {
+        return map == other.map;
+    }
 
     void merge( const mapgen_arguments & );
     void serialize( JsonOut & ) const;
     void deserialize( const JsonValue &ji );
 };
+
+namespace std
+{
+
+template<>
+struct hash<mapgen_arguments> {
+    size_t operator()( const mapgen_arguments & ) const noexcept;
+};
+
+} // namespace std
 
 namespace mapgendata_detail
 {
@@ -41,6 +86,11 @@ template<>
 inline std::string extract_variant_value<std::string>( const cata_variant &v )
 {
     return v.get_string();
+}
+template<>
+inline cata_variant extract_variant_value<cata_variant>( const cata_variant &v )
+{
+    return v;
 }
 
 } // namespace mapgendata_detail
@@ -69,9 +119,11 @@ class mapgendata
         ::mission *mission_;
         int zlevel_;
         mapgen_arguments mapgen_args_;
+        enum_bitset<jmapgen_flags> mapgen_flags_;
+        std::vector<oter_id> predecessors_;
 
     public:
-        oter_id t_nesw[8];
+        std::array<oter_id, 8> t_nesw;
 
         int n_fac = 0;  // dir == 0
         int e_fac = 0;  // dir == 1
@@ -101,6 +153,8 @@ class mapgendata
         mapgendata( const tripoint_abs_omt &over, map &m, float density, const time_point &when,
                     ::mission *miss );
 
+        std::vector<mapgen_phase> skip;
+
         /**
          * Creates a copy of this mapgen data, but stores a different @ref terrain_type.
          * Useful when you want to create a base map (e.g. forest/field/river), that gets
@@ -120,6 +174,13 @@ class mapgendata
          */
         mapgendata( const mapgendata &other, const mapgen_arguments & );
 
+        /**
+         * Creates a copy of this mapgendata, but stores new parameter values
+         * and flags.
+         */
+        mapgendata( const mapgendata &other, const mapgen_arguments &,
+                    const enum_bitset<jmapgen_flags> & );
+
         const oter_id &terrain_type() const {
             return terrain_type_;
         }
@@ -135,6 +196,9 @@ class mapgendata
         int zlevel() const {
             // TODO: should be able to determine this from the map itself
             return zlevel_;
+        }
+        std::vector<oter_id> get_predecessors() const {
+            return predecessors_;
         }
 
         void set_dir( int dir_in, int val );
@@ -173,11 +237,17 @@ class mapgendata
         const oter_id &neighbor_at( om_direction::type dir ) const;
         const oter_id &neighbor_at( direction ) const;
         void fill_groundcover() const;
-        void square_groundcover( const point &p1, const point &p2 ) const;
+        void square_groundcover( const point_bub_ms &p1, const point_bub_ms &p2 ) const;
         ter_id groundcover() const;
         bool is_groundcover( const ter_id &iid ) const;
 
-        bool has_join( const cube_direction, const std::string &join_id ) const;
+        bool has_flag( jmapgen_flags ) const;
+
+        bool has_join( cube_direction, const std::string &join_id ) const;
+
+        bool has_predecessor() const;
+        const oter_id &last_predecessor() const;
+        void pop_last_predecessor();
 
         template<typename Result>
         Result get_arg( const std::string &name ) const {

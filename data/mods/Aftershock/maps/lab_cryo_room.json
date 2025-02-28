@@ -34,8 +34,8 @@
         "|----------------------|"
       ],
       "palettes": [ "lab_palette_aftershock" ],
-      "furniture": { "P": "f_cooling_pylon", "C": "f_cryo_pod", "&": "f_trashcan", "W": "f_workbench", "R": "f_crispr" },
-      "terrain": { "7": "t_console", "*": "t_thconc_floor" },
+      "furniture": { "7": "f_console", "P": "f_cooling_pylon", "C": "f_cryo_pod", "&": "f_trashcan", "W": "f_workbench", "R": "f_crispr" },
+      "terrain": { "*": "t_thconc_floor" },
       "place_traps": [ { "trap": "tr_cryo_pod_switch", "x": [ 5 ], "y": [ 8 ] } ],
       "place_monsters": [ { "monster": "GROUP_LAB", "chance": 2, "x": [ 2, 21 ], "y": [ 2, 21 ], "repeat": [ 1, 5 ] } ],
       "mapping": {
@@ -155,6 +155,7 @@
       "C": "t_thconc_floor",
       "P": "t_thconc_floor"
     },
+    "items": { "T": { "item": "SUS_toilet", "chance": 50 } },
     "toilets": { "T": {  } }
   },
   {

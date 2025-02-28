@@ -1,12 +1,11 @@
 #pragma once
-#include "damage.h"
+#include "type_id.h"
 #ifndef CATA_SRC_SHEARING_H
 #define CATA_SRC_SHEARING_H
 
 #include <vector>
 
-#include "itype.h"
-
+class JsonObject;
 class monster;
 
 struct shearing_roll {
@@ -26,7 +25,6 @@ struct shearing_entry {
 
     bool was_loaded = false;
     void load( const JsonObject &jo );
-    //void deserialize( JsonIn &jsin );
 };
 
 class shearing_data

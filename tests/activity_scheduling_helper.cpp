@@ -2,29 +2,33 @@
 
 #include <climits>
 #include <cstdlib>
-#include <list>
 
+#include "activity_tracker.h"
 #include "avatar.h"
 #include "cata_catch.h"
+#include "character_attire.h"
 #include "debug.h"
 #include "item.h"
+#include "make_static.h"
 #include "map_helpers.h"
 #include "player_activity.h"
 #include "player_helpers.h"
 #include "stomach.h"
 #include "string_formatter.h"
 
+static const itype_id itype_atomic_lamp( "atomic_lamp" );
+static const itype_id itype_duffelbag( "duffelbag" );
+
 void activity_schedule::setup( avatar &guy ) const
 {
     // Start our task, for however long the schedule says.
     // This may be longer than the interval, which means that we
     // never finish this task
-    if( actor ) {
-        guy.assign_activity( player_activity( *actor ), false );
-    } else {
-        guy.assign_activity( player_activity( act, calendar::INDEFINITELY_LONG, -1, INT_MIN,
-                                              "" ), false );
-    }
+    guy.assign_activity( player_activity() ); // disallow resuming
+    const player_activity p_act = actor
+                                  ? player_activity( *actor )
+                                  : player_activity( act, calendar::INDEFINITELY_LONG, -1, INT_MIN, "" );
+    guy.assign_activity( p_act );
 }
 
 void activity_schedule::do_turn( avatar &guy ) const
@@ -74,22 +78,24 @@ void sleep_schedule::setup( avatar &guy ) const
 
 void sleep_schedule::do_turn( avatar &guy ) const
 {
-    if( !guy.has_effect( efftype_id( "sleep" ) ) ) {
+    if( !guy.has_effect( STATIC( efftype_id( "sleep" ) ) ) ) {
         debugmsg( "Woke up!" );
     }
 }
 
-weariness_events do_activity( tasklist tasks )
+weariness_events do_activity( tasklist tasks, bool do_clear_avatar )
 {
     // Clear stuff, ensure we're in the right place
-    clear_avatar();
+    if( do_clear_avatar ) {
+        clear_avatar();
+    }
     clear_map();
 
     avatar &guy = get_avatar();
     // Ensure we have enough light to see
-    item bag( "duffelbag" );
-    item light( "atomic_lamp" );
-    guy.worn.push_back( bag );
+    item bag( itype_duffelbag );
+    item light( itype_atomic_lamp );
+    guy.worn.wear_item( guy, bag, false, false );
     guy.i_add( light );
     // How long we've been doing activities for
     time_duration spent = 0_seconds;
@@ -110,7 +116,7 @@ weariness_events do_activity( tasklist tasks )
             // Consume food, become weary, etc
             guy.update_body();
             // Start each turn with a fresh set of moves
-            guy.moves = 100;
+            guy.set_moves( 100 );
             task.do_turn( guy );
         }
         // Cancel our activity, now that we're done
@@ -123,8 +129,10 @@ weariness_events do_activity( tasklist tasks )
         if( new_weariness != weariness_lvl ) {
             int new_weary = guy.weariness();
             int new_thresh = guy.weary_threshold();
+            int intake = guy.activity_history.intake;
+            int tracker = guy.activity_history.tracker;
             activity_log.log( weariness_lvl, new_weariness, spent,
-                              new_weary, new_thresh );
+                              new_weary, new_thresh, intake, tracker );
             weariness_lvl = new_weariness;
         }
     }
@@ -180,7 +188,8 @@ time_duration tasklist::duration()
 }
 
 void weariness_events::log( const int old_level, const int new_level, const time_duration &when,
-                            const int new_weariness, const int new_threshold )
+                            const int new_weariness, const int new_threshold,
+                            const int intake, const int tracker )
 {
     weary_transition added;
     added.from = old_level;
@@ -188,6 +197,8 @@ void weariness_events::log( const int old_level, const int new_level, const time
     added.minutes = to_minutes<int>( when );
     added.new_weariness = new_weariness;
     added.new_threshold = new_threshold;
+    added.intake = intake;
+    added.tracker = tracker;
 
     transitions.insert( transitions.end(), added );
 }
@@ -222,9 +233,11 @@ std::string weariness_events::summarize() const
 {
     std::string buffer;
     for( const weary_transition &change : transitions ) {
-        buffer += string_format( "Transition: Weariness lvl from %d to %d at %d min (W %d Th %d)\n",
+        buffer += string_format( "Change: Weary lvl from %d to %d at %d min (W %d Th %d In %d Tr %d)\n",
                                  change.from, change.to, change.minutes,
-                                 change.new_weariness, change.new_threshold );
+                                 change.new_weariness, change.new_threshold,
+                                 static_cast<int>( change.intake / 1000 ),
+                                 static_cast<int>( change.tracker / 1000 ) );
     }
     return buffer;
 }

@@ -34,11 +34,7 @@
 
 using namespace clang::ast_matchers;
 
-namespace clang
-{
-namespace tidy
-{
-namespace cata
+namespace clang::tidy::cata
 {
 
 static auto isRefactorableExpr( const std::string &member_ )
@@ -109,7 +105,7 @@ struct ExpressionComponent {
     }
 
     void complete_init() {
-        if( StringRef( objectRef ).endswith( "->" ) ) {
+        if( StringRef( objectRef ).ends_with( "->" ) ) {
             objectRef.erase( objectRef.end() - 2, objectRef.end() );
         }
     }
@@ -656,6 +652,4 @@ void UsePointArithmeticCheck::check( const MatchFinder::MatchResult &Result )
     CheckConstructor( *this, Result );
 }
 
-} // namespace cata
-} // namespace tidy
-} // namespace clang
+} // namespace clang::tidy::cata

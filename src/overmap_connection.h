@@ -2,14 +2,15 @@
 #ifndef CATA_SRC_OVERMAP_CONNECTION_H
 #define CATA_SRC_OVERMAP_CONNECTION_H
 
-#include <iosfwd>
 #include <list>
 #include <set>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
-#include "int_id.h"
 #include "omdata.h"
-#include "string_id.h"
+#include "type_id.h"
 
 class JsonObject;
 struct overmap_location;
@@ -24,7 +25,6 @@ class overmap_connection
             public:
                 enum class flag : int { orthogonal };
 
-            public:
                 string_id<oter_type_t> terrain;
 
                 int basic_cost = 0;
@@ -46,16 +46,15 @@ class overmap_connection
                 std::set<flag> flags;
         };
 
-    public:
         const subtype *pick_subtype_for( const int_id<oter_t> &ground ) const;
         bool has( const int_id<oter_t> &oter ) const;
 
-        void load( const JsonObject &jo, const std::string &src );
+        void load( const JsonObject &jo, std::string_view src );
         void check() const;
         void finalize();
 
-    public:
         string_id<overmap_connection> id;
+        std::vector<std::pair<string_id<overmap_connection>, mod_id>> src;
         bool was_loaded = false;
 
     private:

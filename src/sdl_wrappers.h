@@ -2,6 +2,9 @@
 #ifndef CATA_SRC_SDL_WRAPPERS_H
 #define CATA_SRC_SDL_WRAPPERS_H
 
+#ifndef SDL_MAIN_HANDLED
+#define SDL_MAIN_HANDLED
+#endif
 // IWYU pragma: begin_exports
 #if defined(_MSC_VER) && defined(USE_VCPKG)
 #   include <SDL2/SDL.h>
@@ -103,6 +106,9 @@ void RenderClear( const SDL_Renderer_Ptr &renderer );
 SDL_Surface_Ptr CreateRGBSurface( Uint32 flags, int width, int height, int depth, Uint32 Rmask,
                                   Uint32 Gmask, Uint32 Bmask, Uint32 Amask );
 /**@}*/
+
+void StartTextInput();
+void StopTextInput();
 
 /**
  * Comparison operators which SDL lacks being a C-ish lib.

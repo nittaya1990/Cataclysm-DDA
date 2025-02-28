@@ -2,7 +2,9 @@
 #ifndef CATA_SRC_OVERMAP_LOCATION_H
 #define CATA_SRC_OVERMAP_LOCATION_H
 
-#include <iosfwd>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "flat_set.h"
@@ -15,7 +17,7 @@ struct overmap_location {
     public:
         using TerrColType = cata::flat_set<oter_type_str_id>;
 
-        void load( const JsonObject &jo, const std::string &src );
+        void load( const JsonObject &jo, std::string_view src );
         void check() const;
         void finalize();
 
@@ -26,6 +28,7 @@ struct overmap_location {
 
         // Used by generic_factory
         string_id<overmap_location> id;
+        std::vector<std::pair<string_id<overmap_location>, mod_id>> src;
         bool was_loaded = false;
 
     private:
